@@ -4,7 +4,6 @@
 package main
 
 import (
-	KeyAuthApp "KeyAuth"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -102,17 +101,16 @@ var (
 	mu            sync.Mutex
 	sequence      int
 	reconnectChan = make(chan struct{})
-	mfaToken      string // Global MFA token
-	mfaRetryCount int    // Retry counter for MFA
-	maxMfaRetries = 3    // Maximum number of MFA attempts
+	mfaToken      string 
+	mfaRetryCount int    
+	maxMfaRetries = 3    
 	guilds        = make(map[string]string)
 	config        Config
 	webhookURL    string
 
-	// Initialize fasthttp client
 	fastHttpClient = &fasthttp.Client{
-		TLSConfig:       &tls.Config{InsecureSkipVerify: true}, // Insecure mode
-		MaxConnsPerHost: 1000,                                  // Adjust based on your needs
+		TLSConfig:       &tls.Config{InsecureSkipVerify: true}, 
+		MaxConnsPerHost: 1000,                                  
 	}
 )
 
@@ -125,52 +123,40 @@ const (
 	OpcodeInvalidSession = 9
 	OpcodeHello          = 10
 	OpcodeHeartbeatAck   = 11
-	Intents              = 1 << 0 // GUILDS intent
+	Intents              = 1 << 0
 )
 
-// CustomFormatter formats logs as: 22:29:22.778 [INFO/Connection] Successfully logged in
 type CustomFormatter struct{}
 
-// Format implements the logrus.Formatter interface.
 func (f *CustomFormatter) Format(entry *logrus.Entry) ([]byte, error) {
-	// Format the timestamp to HH:MM:SS.mmm
 	timestamp := entry.Time.Format("15:04:05.000")
 	level := strings.ToUpper(entry.Level.String())
 
-	// Retrieve the subsystem from entry data
 	subsystem, ok := entry.Data["subsystem"].(string)
 	if !ok || subsystem == "" {
 		subsystem = "General"
 	}
 
-	// Construct the log message
 	logMessage := fmt.Sprintf("%s [%s/%s] %s\n", timestamp, level, subsystem, entry.Message)
 	return []byte(logMessage), nil
 }
 
 func initLogger() {
-	// Set the custom formatter
+
 	logrus.SetFormatter(&CustomFormatter{})
-
-	// Optionally, set the log level (default is InfoLevel)
 	logrus.SetLevel(logrus.InfoLevel)
-
-	// Disable logging to stderr by default
 	logrus.SetOutput(os.Stdout)
+
 }
 
-// logInfo logs informational messages with a subsystem.
 func logInfo(subsystem, message string) {
 	logrus.WithField("subsystem", subsystem).Info(message)
 }
 
-// logError logs error messages with a subsystem.
 func logError(subsystem, message string) {
 	logrus.WithField("subsystem", subsystem).Error(message)
 }
 
-// logSuccess logs success messages with a subsystem.
-// Since "SUCCESS" is not a standard log level, we'll map it to InfoLevel with a prefix.
 func logSuccess(subsystem, message string) {
 	logrus.WithField("subsystem", subsystem).Info("SUCCESS: " + message)
 }
@@ -181,7 +167,7 @@ func clearConsole() {
 	case "windows":
 		cmd = exec.Command("cmd", "/c", "cls") // Windows
 	default:
-		cmd = exec.Command("clear") // Unix/Linux/Mac
+		cmd = exec.Command("clear")
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Run()
@@ -208,7 +194,6 @@ func loadConfig(filename string) (*Config, error) {
 	return &cfg, nil
 }
 
-// setCommonHeaders sets common headers for all requests using fasthttp.Request
 func setCommonHeaders(req *fasthttp.Request, token string) {
 	if token != "" {
 		req.Header.Set("Authorization", token)
@@ -245,7 +230,7 @@ func sendWebhook(message string) error {
 
 	req.SetRequestURI(webhookURL)
 	req.Header.SetMethod("POST")
-	setCommonHeaders(req, "") // No authorization needed for webhooks
+	setCommonHeaders(req, "") 
 
 	req.SetBody(jsonData)
 
@@ -266,7 +251,7 @@ func sendWebhook(message string) error {
 func connectGateway() error {
 	dialer := websocket.Dialer{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, // Insecure mode
+			InsecureSkipVerify: true,
 		},
 	}
 	var err error
@@ -284,8 +269,8 @@ func identifyGateway(token string) error {
 		Intents: Intents,
 		Properties: map[string]string{
 			"$os":      "linux",
-			"$browser": "go",
-			"$device":  "go",
+			"$browser": "FireFox",
+			"$device":  ".gg/900",
 		},
 	}
 
@@ -339,7 +324,6 @@ func handleMessages(token, guildID, newURL, pass string) {
 				}
 				logInfo("Gateway", fmt.Sprintf("Logged in as %s#%s (%s)", ready.User.Username, ready.User.Discriminator, ready.User.ID))
 
-				// Collecting all vanity URLs into a list
 				guildList := data["d"].(map[string]interface{})["guilds"].([]interface{})
 				var vanityURLs []string
 				for _, guild := range guildList {
@@ -350,18 +334,14 @@ func handleMessages(token, guildID, newURL, pass string) {
 					}
 				}
 
-				// Logging all vanity URLs
-				logInfo("Gateway", fmt.Sprintf("URLS: %v", vanityURLs))
+				logInfo("Gateway", fmt.Sprintf("Vanity: %v", vanityURLs))
 
 			case "GUILD_UPDATE":
-				// Ensure that data["d"] exists and is a map
 				d, ok := data["d"].(map[string]interface{})
 				if !ok {
 					logError("Gateway", "GUILD_UPDATE event has invalid or missing 'd' field")
 					break
 				}
-
-				// Safely retrieve 'guild_id'
 				guildIDVal, exists := d["guild_id"]
 				if !exists {
 					logError("Gateway", "GUILD_UPDATE event missing 'guild_id'")
@@ -373,8 +353,6 @@ func handleMessages(token, guildID, newURL, pass string) {
 					logError("Gateway", "GUILD_UPDATE event 'guild_id' is not a string")
 					break
 				}
-
-				// Safely retrieve 'vanity_url_code'
 				vanityURLVal, exists := d["vanity_url_code"]
 				var vanityURL string
 				if exists && vanityURLVal != nil {
@@ -384,28 +362,13 @@ func handleMessages(token, guildID, newURL, pass string) {
 						break
 					}
 				} else {
-					// Handle the case where 'vanity_url_code' is missing or nil
-					vanityURL = "" // or another default value as per your logic
+					vanityURL = ""
 				}
-
-				// Proceed with your logic
-				guild, ok := guilds[guildIDxxd] // Assuming guilds map stores vanity URLs as strings.
+				guild, ok := guilds[guildIDxxd] 
 				if ok && guild != vanityURL {
 					go getURL(token, guildID, guild, pass, false)
 				}
-
-				// Optional: Handle additional logging or processing
-				/*
-					var guildUpdate GuildUpdateEvent
-					if err := json.Unmarshal(payload.D, &guildUpdate); err != nil {
-						logError("Gateway", fmt.Sprintf("Error unmarshalling GUILD_UPDATE event: %v", err))
-						continue
-					}
-
-					logInfo("Gateway", fmt.Sprintf("Received GUILD_UPDATE for Guild ID: %s, New Vanity URL: %s", guildUpdate.ID, guildUpdate.VanityURL))
-				*/
 			}
-
 		case OpcodeHello:
 			var hello struct {
 				HeartbeatInterval int `json:"heartbeat_interval"`
@@ -427,7 +390,6 @@ func handleMessages(token, guildID, newURL, pass string) {
 				logError("Gateway", fmt.Sprintf("Error re-identifying: %v", err))
 			}
 		default:
-			// Handle other opcodes if necessary
 		}
 
 		if payload.S != 0 {
@@ -437,8 +399,6 @@ func handleMessages(token, guildID, newURL, pass string) {
 		}
 	}
 }
-
-// startHeartbeat sends heartbeats at the specified interval to keep the connection alive
 func startHeartbeat(interval int) {
 	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
 	defer ticker.Stop()
@@ -472,8 +432,6 @@ func startHeartbeat(interval int) {
 		}
 	}
 }
-
-// reconnect handles reconnection logic when the WebSocket connection drops
 func reconnect(token, guildID, newURL, pass string) {
 	for {
 		select {
@@ -483,7 +441,7 @@ func reconnect(token, guildID, newURL, pass string) {
 				socket.Close()
 			}
 
-			time.Sleep(5 * time.Second) // Wait before reconnecting
+			time.Sleep(5 * time.Second)
 
 			if err := connectGateway(); err != nil {
 				logError("Gateway", fmt.Sprintf("Reconnection failed: %v", err))
@@ -500,7 +458,6 @@ func reconnect(token, guildID, newURL, pass string) {
 	}
 }
 
-// sendMFA sends the MFA request to Discord and returns the MFA token if successful
 func sendMFA(token, ticket, pass string) string {
 
 	logInfo("Checker", "Starting MFA process...")
@@ -510,8 +467,6 @@ func sendMFA(token, ticket, pass string) string {
 		Type:   "password",
 		Data:   pass,
 	}
-
-	// Marshal the payload into JSON
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
 		logError("Checker", fmt.Sprintf("Error marshalling to JSON: %s", err))
@@ -554,8 +509,6 @@ func sendMFA(token, ticket, pass string) string {
 		return "err"
 	}
 }
-
-// getURL attempts to update the vanity URL using the current MFA token if required
 func getURL(token, guildID, newURL, pass string, once bool) {
 	startTime := time.Now() // Start time measurement
 
@@ -571,8 +524,6 @@ func getURL(token, guildID, newURL, pass string, once bool) {
 	req.SetRequestURI(url)
 	req.Header.SetMethod("PATCH")
 	setCommonHeaders(req, token)
-
-	// Set MFA headers if MFA token is available
 	mu.Lock()
 	currentMfaToken := mfaToken
 	mu.Unlock()
@@ -583,15 +534,13 @@ func getURL(token, guildID, newURL, pass string, once bool) {
 	}
 
 	req.SetBody(body)
-
-	// Send request
 	err := fastHttpClient.Do(req, resp)
 	if err != nil {
 		logError("Checker", fmt.Sprintf("Request failed: %v", err))
 		return
 	}
 
-	elapsed := time.Since(startTime).Seconds() * 1000 // Convert to milliseconds
+	elapsed := time.Since(startTime).Seconds() * 1000
 	requestTime := fmt.Sprintf("%.1fms", elapsed)
 
 	bodyBytes := resp.Body()
@@ -604,7 +553,6 @@ func getURL(token, guildID, newURL, pass string, once bool) {
 			if mfaRetryCount >= maxMfaRetries {
 				mu.Unlock()
 				logError("Checker", "Maximum MFA attempts reached. Aborting to prevent loop.")
-				// Send failure notification
 				message := fmt.Sprintf("discord.gg/%s | Failed To Claim | %s", newURL, requestTime)
 				if err := sendWebhook(message); err != nil {
 					logError("Checker", fmt.Sprintf("Failed to send webhook: %v", err))
@@ -620,35 +568,26 @@ func getURL(token, guildID, newURL, pass string, once bool) {
 				logError("Checker", fmt.Sprintf("Error unmarshalling vanity response: %s", err))
 				return
 			}
-
-			// Extract the MFA ticket from the response
 			ticket := vanityResponse.MFA.Ticket
 			logInfo("Checker", fmt.Sprintf("MFA Ticket: %s", ticket))
-
-			// Attempt to send MFA and retrieve the token
 			newMfaToken := sendMFA(token, ticket, pass)
 			if newMfaToken == "" || newMfaToken == "err" {
 				logError("Checker", "Failed to obtain MFA token.")
-				// Send failure notification
 				message := fmt.Sprintf("discord.gg/%s | Failed To Claim | %s", newURL, requestTime)
 				if err := sendWebhook(message); err != nil {
 					logError("Checker", fmt.Sprintf("Failed to send webhook: %v", err))
 				}
 				return
 			}
-
-			// Update the global MFA token
 			mu.Lock()
 			mfaToken = newMfaToken
 			mu.Unlock()
 
 			logInfo("Checker", "Retrying vanity URL update with new MFA token...")
-			// Retry the URL update with the new MFA token without incrementing the retry count again
 			getURL(token, guildID, newURL, pass, false)
 
 		} else {
 			logError("Checker", fmt.Sprintf("Request failed: %v - %s", err, string(bodyBytes)))
-			// Send failure notification
 			message := fmt.Sprintf("||@everyone||\n discord.gg/%s | Failed To Claim | %s", newURL, requestTime)
 			if err := sendWebhook(message); err != nil {
 				logError("Checker", fmt.Sprintf("Failed to send webhook: %v", err))
@@ -656,7 +595,6 @@ func getURL(token, guildID, newURL, pass string, once bool) {
 		}
 	} else {
 		logSuccess("Claimer", fmt.Sprintf("Claimed vanity: %s", newURL))
-		// Send success notification
 		message := fmt.Sprintf("||@everyone||\n discord.gg/%s | Vanity Claimed | 200 |", newURL, )
 		if err := sendWebhook(message); err != nil {
 			logError("Claimer", fmt.Sprintf("Failed to send webhook: %v", err))
@@ -666,49 +604,26 @@ func getURL(token, guildID, newURL, pass string, once bool) {
 
 func main() {
 	initLogger()
-	// Initial log messages
 	for i := 0; i < 9; i++ {
-		logInfo("Configs", "JOJO 1947 GOD SNİPER ")
+		logInfo("Configs", "Luffy900, discord.gg/900 ")
 	}
-
-	// Load configuration from config.json
 	cfg, err := loadConfig("config.json")
 	if err != nil {
 		logError("Configs", fmt.Sprintf("Error loading configuration: %v", err))
 		os.Exit(1)
 	}
 	config = *cfg
-
-	// Assign webhookURL from config
 	webhookURL = config.WebhookURL
-
-	// Validate configuration
 	if config.Token == "" || config.Password == "" || config.GuildID == "" || config.WebhookURL == "" {
 		logError("Configs", "Missing required configuration fields: token, password, guild_id, webhook_url")
 		os.Exit(1)
 	}
-
-	logInfo("Configs", "Successfully loaded updated config")
-	KeyAuthApp.Api(
-		"Ada4_65938's Application", // App name
-		"bPdAKYvrkL", // Account ID
-		"baef02d365614df88e653787bb2d0359b8b6d48b417f70cfde4d57f928853bef",  // Encryption key, keep hidden and and protect this string in your code!
-		"1.0", // Application version. Used for automatic downloads see video here https://www.youtube.com/watch?v=kW195PLCBKs
-		"", // Token Path (PUT NULL OR LEAVE BLANK IF YOU DO NOT WANT TO USE THE TOKEN VALIDATION SYSTEM! MUST DISABLE VIA APP SETTINGS)
-	)
-	license := config.License
-	KeyAuthApp.License(license)
 	logInfo("Checker", "Attempting to get MFA ticket...")
-
-	// Make initial request to get MFA ticket using fasthttp
 	body := []byte("{\"code\":\"" + config.NewVanityURL + "\"}")
-
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
-
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
-
 	url := "https://canary.discord.com/api/v7/guilds/" + config.GuildID + "/vanity-url"
 	req.SetRequestURI(url)
 	req.Header.SetMethod("PATCH")
@@ -756,18 +671,11 @@ func main() {
 	mu.Unlock()
 
 	logInfo("Checker", "Updating vanity URL...")
-
-	//getURL(config.Token, config.GuildID, config.NewVanityURL, config.Password, true)
-
 	logInfo("Checker", "Initial vanity URL update attempted.")
-
-	// Connect to Discord Gateway
 	if err := connectGateway(); err != nil {
 		logError("Gateway", fmt.Sprintf("Failed to connect to Discord Gateway: %v", err))
 		os.Exit(1)
 	}
-
-	// Identify to Discord Gateway
 	if err := identifyGateway(config.Token); err != nil {
 		logError("Gateway", fmt.Sprintf("Failed to identify to Discord Gateway: %v", err))
 		os.Exit(1)
@@ -779,8 +687,6 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	clearConsole()
-	//logInfo("Connection", "Bot is running. Listening to Discord events...")
-
 	<-stop
 	logInfo("Connection", "Shutting down gracefully...")
 	if socket != nil {
